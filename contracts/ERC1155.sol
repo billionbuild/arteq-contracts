@@ -1,13 +1,24 @@
-//
-// Copyright (C) 2021 BillionBuild (2B) Team. Reproduction in whole or in part
-// without written permission is prohibited. All rights reserved.
-//
-// SPDX-License-Identifier: MIT
+/*
+ * This file is part of the contracts written for artèQ Investment Fund (https://github.com/billionbuild/arteq-contracts).
+ * Copyright (c) 2021 BillionBuild (2B) Team.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, version 3.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+// SPDX-License-Identifier: GNU General Public License v3.0
 // Based on OpenZeppelin Contracts v4.3.2 (token/ERC1155/ERC1155.sol)
 
-pragma solidity ^0.8.0;
+pragma solidity 0.8.0;
 
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 import "@openzeppelin/contracts/token/ERC1155/extensions/IERC1155MetadataURI.sol";
@@ -16,7 +27,7 @@ import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 
  /**
-  * @author Modified by Kam Amini <kam@2b.team> <kam.cpp@gmail.com>
+  * @author Modified by Kam Amini <kam@arteq.io> <kam@2b.team> <kam.cpp@gmail.com>
   *
   * @notice Use at your own risk
   *
@@ -184,12 +195,12 @@ abstract contract ERC1155 is Context, ERC165, IERC1155, IERC1155MetadataURI {
     }
 
     function _beforeTokenTransfer(
-        address operator,
-        address from,
-        address to,
-        uint256 id,
-        uint256[] memory amounts,
-        bytes memory data
+        address /* operator */,
+        address /* from */,
+        address /* to */,
+        uint256 /* id */,
+        uint256[] memory /* amounts */,
+        bytes memory /* data */
     ) internal virtual {}
 
     function _asArray(uint256 element, uint len) private pure returns (uint256[] memory) {

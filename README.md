@@ -14,3 +14,11 @@ To run tests:
 ```shell
 make test
 ```
+
+To run coverage:
+```shell
+make coverage
+```
+
+## Author
+Kam Amini <kam@arteq.io> <kam@2b.team> <kam.cpp@gmail.com>
