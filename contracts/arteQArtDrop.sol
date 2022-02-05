@@ -18,7 +18,10 @@
 
 pragma solidity 0.8.0;
 
+import "@openzeppelin/contracts/interfaces/IERC165.sol";
+import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "./IarteQTaskFinalizer.sol";
 
 // TODO(kam): prevent transfer ether to contracts
@@ -26,7 +29,7 @@ import "./IarteQTaskFinalizer.sol";
 /// @author Kam Amini <kam@arteq.io> <kam@2b.team> <kam.cpp@gmail.com>
 ///
 /// @notice Use at your own risk
-contract arteQArtDrop is ERC721URIStorage {
+contract arteQArtDrop is ERC721URIStorage, IERC2981 {
 
     uint256 public constant MAX_NR_TOKENS_PER_ACCOUNT = 5;
 
@@ -47,6 +50,9 @@ contract arteQArtDrop is ERC721URIStorage {
     uint256 private _serviceFee;
 
     string private _defaultTokenURI;
+
+    address _royaltyWallet;
+    uint256 _royaltyPercentage;
 
     // The current art drop stage. It can have the following values:
     //
@@ -94,6 +100,8 @@ contract arteQArtDrop is ERC721URIStorage {
     event Withdrawn(address doer, address target, uint256 amount);
     event TokenURIChanged(address doer, uint256 tokenId, string newValue);
     event GenesisTokenURIChanged(address doer, uint256 adminTaskId, string newValue);
+    event RoyaltyWalletChanged(address doer, uint256 adminTaskId, address newRoyaltyWallet);
+    event RoyaltyPercentageChanged(address doer, uint256 adminTaskId, uint256 newRoyaltyPercentage);
 
     modifier adminApprovalRequired(uint256 adminTaskId) {
         _;
@@ -146,6 +154,10 @@ contract arteQArtDrop is ERC721URIStorage {
         _;
     }
 
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721, IERC165) returns (bool) {
+        return interfaceId == type(IERC2981).interfaceId || super.supportsInterface(interfaceId);
+    }
+
     constructor(
         address adminContract,
         string memory name,
@@ -186,6 +198,12 @@ contract arteQArtDrop is ERC721URIStorage {
         _mint(address(this), 0);
         _setTokenURI(0, initialGenesisTokenURI);
         emit GenesisTokenURIChanged(msg.sender, 0, initialGenesisTokenURI);
+
+        _royaltyWallet = address(this);
+        emit RoyaltyWalletChanged(msg.sender, 0, _royaltyWallet);
+
+        _royaltyPercentage = 10;
+        emit RoyaltyPercentageChanged(msg.sender, 0, _royaltyPercentage);
     }
 
     function pricePerToken() external view returns (uint256) {
@@ -202,6 +220,14 @@ contract arteQArtDrop is ERC721URIStorage {
 
     function stage() external view returns (int256) {
         return _stage;
+    }
+
+    function royaltyPercentage() external view returns (uint256) {
+        return _royaltyPercentage;
+    }
+
+    function royaltyWallet() external view returns (address) {
+        return _royaltyWallet;
     }
 
     function nrOfWhitelistedAccounts() external view returns (uint256) {
@@ -247,6 +273,20 @@ contract arteQArtDrop is ERC721URIStorage {
         require(bytes(newValue).length > 0, "arteQArtDrop: empty string");
         _setTokenURI(0, newValue);
         emit GenesisTokenURIChanged(msg.sender, adminTaskId, newValue);
+    }
+
+    function setRoyaltyWallet(uint256 adminTaskId, address newRoyaltyWallet) external
+      adminApprovalRequired(adminTaskId) {
+        require(newRoyaltyWallet != address(0), "arteQArtDrop: invalid royalty wallet");
+        _royaltyWallet = newRoyaltyWallet;
+        emit RoyaltyWalletChanged(msg.sender, adminTaskId, newRoyaltyWallet);
+    }
+
+    function setRoyaltyPercentage(uint256 adminTaskId, uint256 newRoyaltyPercentage) external
+      adminApprovalRequired(adminTaskId) {
+        require(newRoyaltyPercentage >= 0 && newRoyaltyPercentage <= 75, "arteQArtDrop: invalid royalty percentage");
+        _royaltyPercentage = newRoyaltyPercentage;
+        emit RoyaltyPercentageChanged(msg.sender, adminTaskId, newRoyaltyPercentage);
     }
 
     function retreatStage(uint256 adminTaskId) external
@@ -419,6 +459,11 @@ contract arteQArtDrop is ERC721URIStorage {
         require(success, "arteQArtDrop: failed to transfer");
 
         emit Withdrawn(msg.sender, target, amount);
+    }
+
+    function royaltyInfo(uint256, uint256 salePrice) external view virtual override returns (address, uint256) {
+        uint256 royalty = (salePrice * _royaltyPercentage) / 100;
+        return (_royaltyWallet, royalty);
     }
 
     function _reserveTokens(address target, uint256 nrOfTokensToReserve) internal {
