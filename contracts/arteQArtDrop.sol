@@ -32,12 +32,12 @@ import "./IarteQTaskFinalizer.sol";
 contract arteQArtDrop is ERC721URIStorage, IERC2981 {
 
     uint256 public constant MAX_NR_TOKENS_PER_ACCOUNT = 5;
+    uint256 public constant MAX_RESERVATIONS_COUNT = 10000;
 
     int256 public constant LOCKED_STAGE = 0;
     int256 public constant WHITELISTING_STAGE = 2;
     int256 public constant RESERVATION_STAGE = 3;
-    int256 public constant MINTING_STAGE = 4;
-    int256 public constant DISTRIBUTION_STAGE = 5;
+    int256 public constant DISTRIBUTION_STAGE = 4;
 
     // Counter for token IDs
     uint256 private _tokenIdCounter;
@@ -59,8 +59,7 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
     //   0: Locked / Read-only mode
     //   2: Selection of the registered wallets (whitelisting)
     //   3: Reservation / Purchase stage
-    //   4: Minting stage
-    //   5: Distribution of the tokens / Drop stage
+    //   4: Distribution of the tokens / Drop stage
     //
     // * 1 is missing from the above list. That's to keep the off-chain
     //   and on-chain states in sync.
@@ -80,6 +79,9 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
 
     // Counts the number of reserved tokens
     uint256 _reservedTokensCounter;
+
+    // Enabled reservations without a need to be whitelisted
+    bool _canReserveWithoutBeingWhitelisted;
 
     // An operator which is allowed to perform certain operations such as adding whitelisted
     // accounts, removing them, or doing the token reservation for credit card payments. These
@@ -102,6 +104,7 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
     event GenesisTokenURIChanged(address doer, uint256 adminTaskId, string newValue);
     event RoyaltyWalletChanged(address doer, uint256 adminTaskId, address newRoyaltyWallet);
     event RoyaltyPercentageChanged(address doer, uint256 adminTaskId, uint256 newRoyaltyPercentage);
+    event CanReserveWithoutBeingWhitelistedChanged(address doer, uint256 adminTaskId, bool newValue);
 
     modifier adminApprovalRequired(uint256 adminTaskId) {
         _;
@@ -124,8 +127,8 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
         _;
     }
 
-    modifier onlyMintingStage() {
-        require(_stage == MINTING_STAGE, "arteQArtDrop: only callable in minting stage");
+    modifier onlyReservationAndDistributionStages() {
+        require(_stage == RESERVATION_STAGE || _stage == DISTRIBUTION_STAGE, "arteQArtDrop: only callable in reservation and distribution stage");
         _;
     }
 
@@ -146,11 +149,6 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
 
     modifier onlyOperator() {
         require(_operators[msg.sender] > 0, "arteQArtDrop: not an operator account");
-        _;
-    }
-
-    modifier onlyWhitelisted() {
-        require(_whitelistedAccounts[msg.sender] > 0, "arteQArtDrop: not a whitelisted account");
         _;
     }
 
@@ -204,6 +202,9 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
 
         _royaltyPercentage = 10;
         emit RoyaltyPercentageChanged(msg.sender, 0, _royaltyPercentage);
+
+        _canReserveWithoutBeingWhitelisted = false;
+        emit CanReserveWithoutBeingWhitelistedChanged(msg.sender, 0, _canReserveWithoutBeingWhitelisted);
     }
 
     function pricePerToken() external view returns (uint256) {
@@ -236,6 +237,10 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
 
     function nrOfReservedTokens() external view returns (uint256) {
         return _reservedTokensCounter;
+    }
+
+    function canReserveWithoutBeingWhitelisted() external view returns (bool) {
+        return _canReserveWithoutBeingWhitelisted;
     }
 
     function setPricePerToken(uint256 adminTaskId, uint256 newValue) external
@@ -289,12 +294,18 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
         emit RoyaltyPercentageChanged(msg.sender, adminTaskId, newRoyaltyPercentage);
     }
 
+    function setCanReserveWithoutBeingWhitelisted(uint256 adminTaskId, bool newValue) external
+      adminApprovalRequired(adminTaskId) {
+        _canReserveWithoutBeingWhitelisted = newValue;
+        emit CanReserveWithoutBeingWhitelistedChanged(msg.sender, adminTaskId, newValue);
+    }
+
     function retreatStage(uint256 adminTaskId) external
       adminApprovalRequired(adminTaskId) {
         int256 oldStage = _stage;
         _stage -= 1;
         if (_stage == -1) {
-            _stage = 5;
+            _stage = 4;
         } else if (_stage == 1) {
             _stage = 0;
         }
@@ -305,7 +316,7 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
       adminApprovalRequired(adminTaskId) {
         int256 oldStage = _stage;
         _stage += 1;
-        if (_stage == 6) {
+        if (_stage == 5) {
             _stage = 0;
         } else if (_stage == 1) {
             _stage = 2;
@@ -377,6 +388,12 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
     }
 
     function whitelistedNrOfTokens(address account) external view returns (uint256) {
+        if (!_canReserveWithoutBeingWhitelisted) {
+            return _whitelistedAccounts[account];
+        }
+        if (_whitelistedAccounts[account] == 0) {
+            return MAX_NR_TOKENS_PER_ACCOUNT;
+        }
         return _whitelistedAccounts[account];
     }
 
@@ -385,12 +402,19 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
     // * Account must have sent enough ETH to cover the price of all tokens + service fee
     // * Account cannot reserve more than what has been whitelisted for
     function reserveTokens(uint256 nrOfTokensToReserve) external payable
-      onlyWhitelisted
-      onlyReservationStage {
+      onlyReservationAndDistributionStages {
         require(msg.value > 0, "arteQArtDrop: zero funds");
         require(nrOfTokensToReserve > 0, "arteQArtDrop: zero tokens to reserve");
+
+        if (_canReserveWithoutBeingWhitelisted && _whitelistedAccounts[msg.sender] == 0) {
+            _whitelistedAccounts[msg.sender] = 5;
+        }
+
+        require(_whitelistedAccounts[msg.sender] > 0, "arteQArtDrop: not a whitelisted account");
         require(nrOfTokensToReserve <= _whitelistedAccounts[msg.sender],
               "arteQArtDrop: exceeding the reservation allowance");
+        require((_reservedTokensCounter + nrOfTokensToReserve) <= MAX_RESERVATIONS_COUNT,
+                "arteQArtDrop: exceeding max number of reservations");
 
         // Handle payments
         uint256 priceOfTokens = nrOfTokensToReserve * _pricePerToken;
@@ -414,7 +438,7 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
       uint256[] memory listOfNrOfTokensToReserve
     ) external
       onlyOperator
-      onlyReservationStage {
+      onlyReservationAndDistributionStages {
         require(accounts.length > 0, "arteQArtDrop: zero length");
         require(listOfNrOfTokensToReserve.length > 0, "arteQArtDrop: zero length");
         require(accounts.length == listOfNrOfTokensToReserve.length, "arteQArtDrop: different lengths");
@@ -423,6 +447,11 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
             uint256 nrOfTokensToReserve = listOfNrOfTokensToReserve[i];
 
             require(account != address(0), "arteQArtDrop: cannot be zero address");
+
+            if (_canReserveWithoutBeingWhitelisted && _whitelistedAccounts[account] == 0) {
+                _whitelistedAccounts[account] = 5;
+            }
+
             require(_whitelistedAccounts[account] > 0, "arteQArtDrop: not a whitelisted account");
             require(nrOfTokensToReserve <= _whitelistedAccounts[account],
                   "arteQArtDrop: exceeding the reservation allowance");
@@ -474,6 +503,8 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
             emit TokenURIChanged(msg.sender, newTokenId, _defaultTokenURI);
             _tokenIdCounter += 1;
             _reservedTokensCounter += 1;
+            require(_reservedTokensCounter <= MAX_RESERVATIONS_COUNT,
+                    "arteQArtDrop: exceeding max number of reservations");
         }
         _whitelistedAccounts[target] -= nrOfTokensToReserve;
         require(_whitelistedAccounts[target] >= 0, "arteQArtDrop: should not happen");

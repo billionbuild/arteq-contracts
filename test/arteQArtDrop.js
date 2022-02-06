@@ -23,14 +23,13 @@ const zeroAddress = "0x0000000000000000000000000000000000000000";
 const LOCKED_STAGE = 0;
 const WHITELISTING_STAGE = 2;
 const RESERVATION_STAGE = 3;
-const MINTING_STAGE = 4;
-const DISTRIBUTION_STAGE = 5;
+const DISTRIBUTION_STAGE = 4;
 
 describe("arteQ ArtDrop", function() {
 
     const getNextStage = (stage) => {
         let newStage = parseInt(stage) + 1;
-        if (newStage == 6) {
+        if (newStage == 5) {
             newStage = 0;
         } else if (newStage == 1) {
             newStage = 2;
@@ -41,7 +40,7 @@ describe("arteQ ArtDrop", function() {
     const getPreviousStage = (stage) => {
         let newStage = parseInt(stage) - 1;
         if (newStage == -1) {
-            newStage = 5;
+            newStage = 4;
         } else if (newStage == 1) {
             newStage = 0;
         }
@@ -173,13 +172,16 @@ describe("arteQ ArtDrop", function() {
         await contract.deployed();
 
         deployReceipt = await contract.deployTransaction.wait();
-        expect(deployReceipt.logs.length).to.equal(6);
+        expect(deployReceipt.logs.length).to.equal(9);
         await expect(contract.deployTransaction).to.emit(contract, "PricePerTokenChanged").withArgs(admin3.address, 0, 0, ethers.utils.parseEther("0.45"));
         await expect(contract.deployTransaction).to.emit(contract, "ServiceFeeChanged").withArgs(admin3.address, 0, 0, ethers.utils.parseEther("0.05"));
         await expect(contract.deployTransaction).to.emit(contract, "DefaultTokenURIChanged").withArgs(admin3.address, 0, "ipfs://link-to-default-json-blob");
         await expect(contract.deployTransaction).to.emit(contract, "StageChanged").withArgs(admin3.address, 0, 0, LOCKED_STAGE);
         await expect(contract.deployTransaction).to.emit(contract, "Transfer").withArgs(zeroAddress, contract.address, 0);
         await expect(contract.deployTransaction).to.emit(contract, "GenesisTokenURIChanged").withArgs(admin3.address, 0, "ipfs://link-to-genesis-json-blob");
+        await expect(contract.deployTransaction).to.emit(contract, "RoyaltyPercentageChanged").withArgs(admin3.address, 0, 10);
+        await expect(contract.deployTransaction).to.emit(contract, "RoyaltyWalletChanged").withArgs(admin3.address, 0, contract.address);
+        await expect(contract.deployTransaction).to.emit(contract, "CanReserveWithoutBeingWhitelistedChanged").withArgs(admin3.address, 0, false);
 
         expect(await contract.connect(user1).ownerOf(0)).to.equal(contract.address);
         expect(await provider.getBalance(contract.address)).to.equal(0);
@@ -187,6 +189,7 @@ describe("arteQ ArtDrop", function() {
         expect(await contract.connect(user1).pricePerToken()).to.equal(ethers.utils.parseEther("0.45"));
         expect(await contract.connect(user1).serviceFee()).to.equal(ethers.utils.parseEther("0.05"));
         expect(await contract.connect(user1).defaultTokenURI()).to.equal("ipfs://link-to-default-json-blob");
+        expect(await contract.connect(user1).canReserveWithoutBeingWhitelisted()).to.equal(false);
         expect(await contract.connect(user1).tokenURI(0)).to.equal("ipfs://link-to-genesis-json-blob");
 
         const taskId = await getApprovedTask();
@@ -201,7 +204,7 @@ describe("arteQ ArtDrop", function() {
         await expect(user1.sendTransaction({
             to: contract.address,
             value: ethers.utils.parseEther("1"),
-        })).to.be.revertedWith("arteQTokens: cannot accept ether");
+        })).to.be.revertedWith("arteQArtDrop: cannot accept ether");
     });
 
     it("[setStage] change stages", async() => {
@@ -216,10 +219,6 @@ describe("arteQ ArtDrop", function() {
         }
         {
             await advanceStage();
-            expect(await contract.connect(user1).stage()).to.equal(MINTING_STAGE);
-        }
-        {
-            await advanceStage();
             expect(await contract.connect(user1).stage()).to.equal(DISTRIBUTION_STAGE);
         }
         // now, advancing further should return us back to the locked stage
@@ -231,10 +230,6 @@ describe("arteQ ArtDrop", function() {
         {
             await retreatStage();
             expect(await contract.connect(user1).stage()).to.equal(DISTRIBUTION_STAGE);
-        }
-        {
-            await retreatStage();
-            expect(await contract.connect(user1).stage()).to.equal(MINTING_STAGE);
         }
         {
             await retreatStage();
@@ -273,7 +268,6 @@ describe("arteQ ArtDrop", function() {
     });
 
     [{ stage: WHITELISTING_STAGE, stageName: 'whitelisting' },
-     { stage: MINTING_STAGE,      stageName: 'minting'      },
      { stage: DISTRIBUTION_STAGE, stageName: 'distribution' }
     ].forEach((test) => {
         it(`[setPricePerToken] change the price-per-token in '${test.stageName}' stage`, async () => {
@@ -303,7 +297,6 @@ describe("arteQ ArtDrop", function() {
     });
 
     [{ stage: WHITELISTING_STAGE, stageName: 'whitelisting' },
-     { stage: MINTING_STAGE,      stageName: 'minting'      },
      { stage: DISTRIBUTION_STAGE, stageName: 'distribution' }
     ].forEach((test) => {
         it(`[setServiceFee] change the service fee in '${test.stageName}' stage`, async () => {
@@ -339,7 +332,6 @@ describe("arteQ ArtDrop", function() {
     });
 
     [{ stage: WHITELISTING_STAGE, stageName: 'whitelisting' },
-     { stage: MINTING_STAGE,      stageName: 'minting'      },
      { stage: DISTRIBUTION_STAGE, stageName: 'distribution' }
     ].forEach((test) => {
         it(`[setDefaultTokenURI] change the default token URI in '${test.stageName}' stage`, async () => {
@@ -369,7 +361,6 @@ describe("arteQ ArtDrop", function() {
 
     [{ stage: WHITELISTING_STAGE, stageName: 'whitelisting' },
      { stage: RESERVATION_STAGE,  stageName: 'reservation'  },
-     { stage: MINTING_STAGE,      stageName: 'minting'      },
      { stage: DISTRIBUTION_STAGE, stageName: 'distribution' }
     ].forEach((test) => {
         it(`[setGenesisTokenURI] try to change the genesis token's URI in '${test.stageName}' stage must fail`, async () => {
@@ -384,7 +375,6 @@ describe("arteQ ArtDrop", function() {
     [{ stage: LOCKED_STAGE,       stageName: 'locked'       },
      { stage: WHITELISTING_STAGE, stageName: 'whitelisting' },
      { stage: RESERVATION_STAGE,  stageName: 'reservation'  },
-     { stage: MINTING_STAGE,      stageName: 'minting'      },
      { stage: DISTRIBUTION_STAGE, stageName: 'distribution' }
     ].forEach((test) => {
         it(`[addOperator] add a new operator in '${test.stageName}' stage`, async () => {
@@ -413,7 +403,6 @@ describe("arteQ ArtDrop", function() {
     [{ stage: LOCKED_STAGE,       stageName: 'locked'       },
      { stage: WHITELISTING_STAGE, stageName: 'whitelisting' },
      { stage: RESERVATION_STAGE,  stageName: 'reservation'  },
-     { stage: MINTING_STAGE,      stageName: 'minting'      },
      { stage: DISTRIBUTION_STAGE, stageName: 'distribution' }
     ].forEach((test) => {
         it(`[removeOperator] remove an operator in '${test.stageName}' stage`, async () => {
@@ -453,7 +442,6 @@ describe("arteQ ArtDrop", function() {
 
     [{ stage: LOCKED_STAGE,       stageName: 'locked'       },
      { stage: RESERVATION_STAGE,  stageName: 'reservation'  },
-     { stage: MINTING_STAGE,      stageName: 'minting'      },
      { stage: DISTRIBUTION_STAGE, stageName: 'distribution' }
     ].forEach((test) => {
         it(`[addToWhitelistdAccounts] must fail in ${test.stageName} stage`, async () => {
@@ -590,7 +578,6 @@ describe("arteQ ArtDrop", function() {
 
     [{ stage: LOCKED_STAGE,       stageName: 'locked'       },
      { stage: RESERVATION_STAGE,  stageName: 'reservation'  },
-     { stage: MINTING_STAGE,      stageName: 'minting'      },
      { stage: DISTRIBUTION_STAGE, stageName: 'distribution' }
     ].forEach((test) => {
         it(`[removeFromWhitelistdAccounts] must fail in ${test.stageName} stage`, async () => {
@@ -680,141 +667,194 @@ describe("arteQ ArtDrop", function() {
     });
 
     [{ stage: LOCKED_STAGE,       stageName: 'locked'       },
-     { stage: WHITELISTING_STAGE, stageName: 'whitelisting' },
-     { stage: MINTING_STAGE,      stageName: 'minting'      },
-     { stage: DISTRIBUTION_STAGE, stageName: 'distribution' }
+     { stage: WHITELISTING_STAGE, stageName: 'whitelisting' }
     ].forEach((test) => {
         it(`[reserveTokens] must fail when called in ${test.stageName} stage`, async () => {
             const operator = await whitelistAccountAndReturnOperator(user1, 4);
             await goToStage(test.stage);
             const call = contract.connect(user1).reserveTokens(2);
-            await expect(call).to.be.revertedWith("arteQArtDrop: only callable in reservation stage");
+            await expect(call).to.be.revertedWith("arteQArtDrop: only callable in reservation and distribution stage");
         });
     });
 
-    it('[reserveTokens] must fail when no ether is sent', async () => {
-        await whitelistAccountAndReturnOperator(user1, 4);
-        await goToStage(RESERVATION_STAGE);
-        const call = contract.connect(user1).reserveTokens(2);
-        await expect(call).to.be.revertedWith("arteQArtDrop: zero funds");
+    [{ stage: RESERVATION_STAGE,  stageName: 'reservation'  },
+     { stage: DISTRIBUTION_STAGE, stageName: 'distribution' }
+    ].forEach((test) => {
+      it(`[reserveTokens] must fail when no ether is sent (${test.stageName} stage)`, async () => {
+          await whitelistAccountAndReturnOperator(user1, 4);
+          await goToStage(test.stage);
+          const call = contract.connect(user1).reserveTokens(2);
+          await expect(call).to.be.revertedWith("arteQArtDrop: zero funds");
+      });
+
+      it(`[reserveTokens] must fail when zero is passed as argument (${test.stageName} stage)`, async () => {
+          await whitelistAccountAndReturnOperator(user1, 4);
+          await goToStage(test.stage);
+          const call = contract.connect(user1).reserveTokens(0, { value: ethers.utils.parseEther("1") });
+          await expect(call).to.be.revertedWith("arteQArtDrop: zero tokens to reserve");
+      });
+
+      it(`[reserveTokens] must fail when more than the whitelisted nr of tokens is asked to be reserved (${test.stageName} stage)`, async () => {
+          await whitelistAccountAndReturnOperator(user1, 4);
+          await goToStage(test.stage);
+          const call = contract.connect(user1).reserveTokens(5, { value: ethers.utils.parseEther("1") });
+          await expect(call).to.be.revertedWith("arteQArtDrop: exceeding the reservation allowance");
+      });
+
+      it(`[reserveTokens] must fail when not enough ether has not been sent (${test.stageName} stage)`, async () => {
+          await whitelistAccountAndReturnOperator(user1, 4);
+          await goToStage(test.stage);
+          expect(await contract.connect(user1).pricePerToken()).to.equal(ethers.utils.parseEther("0.45"));
+          const call = contract.connect(user1).reserveTokens(2, { value: ethers.utils.parseEther("0.7") }); // 0.7 < 2 * 0.45
+          await expect(call).to.be.revertedWith("arteQArtDrop: insufficient funds");
+      });
+
+      it(`[reserveTokens] success scenario with exact amount of ethereum needed (zero remainder) (${test.stageName} stage)`, async () => {
+          const provider = waffle.provider;
+
+          await whitelistAccountAndReturnOperator(user1, 4);
+          await goToStage(test.stage);
+          expect(await contract.connect(user3).whitelistedNrOfTokens(user1.address)).to.equal(4);
+          expect(await contract.connect(user1).pricePerToken()).to.equal(ethers.utils.parseEther("0.45"));
+          expect(await contract.connect(user1).serviceFee()).to.equal(ethers.utils.parseEther("0.05"));
+          expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(0);
+          const oldBalance = await provider.getBalance(user1.address);
+          const oldContractBalance = await provider.getBalance(contract.address);
+          const exactValue = ethers.utils.parseEther(`1.4`);
+          const call = contract.connect(user1).reserveTokens(3, { value: exactValue });
+          const tx = await call;
+          const receipt = await tx.wait();
+          expect(receipt.logs.length).to.equal(8);
+          await expect(call).to.emit(contract, "Deposited")
+              .withArgs(user1.address, ethers.utils.parseEther('1.35'), ethers.utils.parseEther('0.05'), exactValue);
+          await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 1);
+          await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 1, 'ipfs://link-to-default-json-blob');
+          await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 2);
+          await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 2, 'ipfs://link-to-default-json-blob');
+          await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 3);
+          await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 3, 'ipfs://link-to-default-json-blob');
+          await expect(call).to.emit(contract, "TokensReserved").withArgs(user1.address, user1.address, 3);
+          expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(3);
+          const newBalance = await provider.getBalance(user1.address);
+          const newContractBalance = await provider.getBalance(contract.address);
+          const balanceDiff = oldBalance.sub(newBalance);
+          const contractBalanceDiff = newContractBalance.sub(oldContractBalance);
+          expect(balanceDiff.sub(exactValue).abs()).to.be.below(ethers.utils.parseEther('0.003')); // because of gas fees
+          expect(contractBalanceDiff).to.equal(exactValue);
+
+          // trying to reserve more than the remenant must fail
+          {
+              expect(await contract.connect(user3).whitelistedNrOfTokens(user1.address)).to.equal(1);
+              const call = contract.connect(user1).reserveTokens(2, { value: ethers.utils.parseEther("1") });
+              await expect(call).to.be.revertedWith("arteQArtDrop: exceeding the reservation allowance");
+          }
+          // this should succeed
+          {
+              expect(await contract.connect(user3).whitelistedNrOfTokens(user1.address)).to.equal(1);
+              const call = contract.connect(user1).reserveTokens(1, { value: ethers.utils.parseEther("1.12") });
+              const tx = await call;
+              const receipt = await tx.wait();
+              expect(receipt.logs.length).to.equal(5);
+              await expect(call).to.emit(contract, "Deposited")
+                  .withArgs(user1.address, ethers.utils.parseEther('0.45'), ethers.utils.parseEther('0.05'), ethers.utils.parseEther('0.5'));
+              await expect(call).to.emit(contract, "Returned").withArgs(user1.address, user1.address, ethers.utils.parseEther('0.62'));
+              await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 4);
+              await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 4, 'ipfs://link-to-default-json-blob');
+              await expect(call).to.emit(contract, "TokensReserved").withArgs(user1.address, user1.address, 1);
+              expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(4);
+          }
+      });
+
+      it(`[reserveTokens] success scenario with extra amount of ethereum needed (non-zero remainder) (${test.stageName} stage)`, async () => {
+          const provider = waffle.provider;
+
+          await whitelistAccountAndReturnOperator(user1, 4);
+          await goToStage(test.stage);
+          expect(await contract.connect(user3).whitelistedNrOfTokens(user1.address)).to.equal(4);
+          expect(await contract.connect(user1).pricePerToken()).to.equal(ethers.utils.parseEther("0.45"));
+          expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(1);
+          expect(await contract.connect(user1).serviceFee()).to.equal(ethers.utils.parseEther("0.05"));
+          expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(0);
+          const oldBalance = await provider.getBalance(user1.address);
+          const oldContractBalance = await provider.getBalance(contract.address);
+          const exactValue = ethers.utils.parseEther(`1.4`);
+          const sendingValue = ethers.utils.parseEther(`1.567`);
+          const call = contract.connect(user1).reserveTokens(3, { value: sendingValue });
+          const tx = await call;
+          const receipt = await tx.wait();
+          expect(receipt.logs.length).to.equal(9);
+          await expect(call).to.emit(contract, "Deposited")
+              .withArgs(user1.address, ethers.utils.parseEther('1.35'), ethers.utils.parseEther('0.05'), exactValue);
+          await expect(call).to.emit(contract, "Returned").withArgs(user1.address, user1.address, ethers.utils.parseEther('0.167'));
+          await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 1);
+          await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 1, 'ipfs://link-to-default-json-blob');
+          await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 2);
+          await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 2, 'ipfs://link-to-default-json-blob');
+          await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 3);
+          await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 3, 'ipfs://link-to-default-json-blob');
+          await expect(call).to.emit(contract, "TokensReserved").withArgs(user1.address, user1.address, 3);
+          expect(await contract.connect(user3).whitelistedNrOfTokens(user1.address)).to.equal(1);
+          expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(1);
+          expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(3);
+          const newBalance = await provider.getBalance(user1.address);
+          const newContractBalance = await provider.getBalance(contract.address);
+          const balanceDiff = oldBalance.sub(newBalance);
+          const contractBalanceDiff = newContractBalance.sub(oldContractBalance);
+          expect(balanceDiff.sub(exactValue).abs()).to.be.below(ethers.utils.parseEther('0.003')); // because of gas fees
+          expect(contractBalanceDiff).to.equal(exactValue);
+      });
+
+      it.only(`[reserveTokens] success scenario when whitelisting condition is lifted (${test.stageName} stage)`, async () => {
+          const provider = waffle.provider;
+
+          await goToStage(test.stage);
+          // must fail as the user is not whitelisted
+          {
+              expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(0);
+              expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(0);
+              expect(await contract.connect(user1).canReserveWithoutBeingWhitelisted()).to.equal(false);
+              expect(await contract.connect(user3).whitelistedNrOfTokens(user2.address)).to.equal(0);
+              await expect(contract.connect(user2).reserveTokens(3, { value: ethers.utils.parseEther("2") })).to.be.revertedWith("arteQArtDrop: not a whitelisted account");
+          }
+          // lifting the whitelisting condition
+          {
+              const taskId = await getApprovedTask();
+              const call = contract.connect(admin1).setCanReserveWithoutBeingWhitelisted(taskId, true);
+              const tx = await call;
+              const receipt = await tx.wait();
+              expect(receipt.logs.length).to.equal(2);
+              await expect(call).to.emit(adminContract, "TaskFinalized").withArgs(contract.address, admin1.address, taskId);
+              await expect(call).to.emit(contract, "CanReserveWithoutBeingWhitelistedChanged").withArgs(admin1.address, taskId, true);
+              expect(await contract.connect(user1).canReserveWithoutBeingWhitelisted()).to.equal(true);
+          }
+          // now it must succeed
+          {
+              expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(0);
+              expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(0);
+              expect(await contract.connect(user1).canReserveWithoutBeingWhitelisted()).to.equal(true);
+              expect(await contract.connect(user3).whitelistedNrOfTokens(user2.address)).to.equal(5);
+              await contract.connect(user2).reserveTokens(3, { value: ethers.utils.parseEther("2") });
+              expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(0);
+              expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(3);
+              expect(await contract.connect(user3).whitelistedNrOfTokens(user2.address)).to.equal(2);
+          }
+          // must fail when asking for another 3 drops
+          {
+              await expect(contract.connect(user2).reserveTokens(3, { value: ethers.utils.parseEther("2") })).to.be.revertedWith("arteQArtDrop: exceeding the reservation allowance");
+          }
+          // now it must succeed
+          {
+              expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(0);
+              expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(3);
+              expect(await contract.connect(user3).whitelistedNrOfTokens(user2.address)).to.equal(2);
+              await contract.connect(user2).reserveTokens(2, { value: ethers.utils.parseEther("2") });
+              expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(0);
+              expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(5);
+              expect(await contract.connect(user3).whitelistedNrOfTokens(user2.address)).to.equal(5); // the wallet is allowed to buy again
+          }
+      });
     });
 
-    it('[reserveTokens] must fail when zero is passed as argument', async () => {
-        await whitelistAccountAndReturnOperator(user1, 4);
-        await goToStage(RESERVATION_STAGE);
-        const call = contract.connect(user1).reserveTokens(0, { value: ethers.utils.parseEther("1") });
-        await expect(call).to.be.revertedWith("arteQArtDrop: zero tokens to reserve");
-    });
-
-    it('[reserveTokens] must fail when more than the whitelisted nr of tokens is asked to be reserved', async () => {
-        await whitelistAccountAndReturnOperator(user1, 4);
-        await goToStage(RESERVATION_STAGE);
-        const call = contract.connect(user1).reserveTokens(5, { value: ethers.utils.parseEther("1") });
-        await expect(call).to.be.revertedWith("arteQArtDrop: exceeding the reservation allowance");
-    });
-
-    it('[reserveTokens] must fail when not enough ether has not been sent', async () => {
-        await whitelistAccountAndReturnOperator(user1, 4);
-        await goToStage(RESERVATION_STAGE);
-        expect(await contract.connect(user1).pricePerToken()).to.equal(ethers.utils.parseEther("0.45"));
-        const call = contract.connect(user1).reserveTokens(2, { value: ethers.utils.parseEther("0.7") }); // 0.7 < 2 * 0.45
-        await expect(call).to.be.revertedWith("arteQArtDrop: insufficient funds");
-    });
-
-    it('[reserveTokens] success scenario with exact amount of ethereum needed (zero remainder)', async () => {
-        const provider = waffle.provider;
-
-        await whitelistAccountAndReturnOperator(user1, 4);
-        await goToStage(RESERVATION_STAGE);
-        expect(await contract.connect(user3).whitelistedNrOfTokens(user1.address)).to.equal(4);
-        expect(await contract.connect(user1).pricePerToken()).to.equal(ethers.utils.parseEther("0.45"));
-        expect(await contract.connect(user1).serviceFee()).to.equal(ethers.utils.parseEther("0.05"));
-        expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(0);
-        const oldBalance = await provider.getBalance(user1.address);
-        const oldContractBalance = await provider.getBalance(contract.address);
-        const exactValue = ethers.utils.parseEther(`1.4`);
-        const call = contract.connect(user1).reserveTokens(3, { value: exactValue });
-        const tx = await call;
-        const receipt = await tx.wait();
-        expect(receipt.logs.length).to.equal(8);
-        await expect(call).to.emit(contract, "Deposited")
-            .withArgs(user1.address, ethers.utils.parseEther('1.35'), ethers.utils.parseEther('0.05'), exactValue);
-        await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 1);
-        await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 1, 'ipfs://link-to-default-json-blob');
-        await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 2);
-        await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 2, 'ipfs://link-to-default-json-blob');
-        await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 3);
-        await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 3, 'ipfs://link-to-default-json-blob');
-        await expect(call).to.emit(contract, "TokensReserved").withArgs(user1.address, user1.address, 3);
-        expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(3);
-        const newBalance = await provider.getBalance(user1.address);
-        const newContractBalance = await provider.getBalance(contract.address);
-        const balanceDiff = oldBalance.sub(newBalance);
-        const contractBalanceDiff = newContractBalance.sub(oldContractBalance);
-        expect(balanceDiff.sub(exactValue).abs()).to.be.below(ethers.utils.parseEther('0.003')); // because of gas fees
-        expect(contractBalanceDiff).to.equal(exactValue);
-
-        // trying to reserve more than the remenant must fail
-        {
-            expect(await contract.connect(user3).whitelistedNrOfTokens(user1.address)).to.equal(1);
-            const call = contract.connect(user1).reserveTokens(2, { value: ethers.utils.parseEther("1") });
-            await expect(call).to.be.revertedWith("arteQArtDrop: exceeding the reservation allowance");
-        }
-        // this should succeed
-        {
-            expect(await contract.connect(user3).whitelistedNrOfTokens(user1.address)).to.equal(1);
-            const call = contract.connect(user1).reserveTokens(1, { value: ethers.utils.parseEther("1.12") });
-            const tx = await call;
-            const receipt = await tx.wait();
-            expect(receipt.logs.length).to.equal(5);
-            await expect(call).to.emit(contract, "Deposited")
-                .withArgs(user1.address, ethers.utils.parseEther('0.45'), ethers.utils.parseEther('0.05'), ethers.utils.parseEther('0.5'));
-            await expect(call).to.emit(contract, "Returned").withArgs(user1.address, user1.address, ethers.utils.parseEther('0.62'));
-            await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 4);
-            await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 4, 'ipfs://link-to-default-json-blob');
-            await expect(call).to.emit(contract, "TokensReserved").withArgs(user1.address, user1.address, 1);
-            expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(4);
-        }
-    });
-
-    it('[reserveTokens] success scenario with extra amount of ethereum needed (non-zero remainder)', async () => {
-        const provider = waffle.provider;
-
-        await whitelistAccountAndReturnOperator(user1, 4);
-        await goToStage(RESERVATION_STAGE);
-        expect(await contract.connect(user3).whitelistedNrOfTokens(user1.address)).to.equal(4);
-        expect(await contract.connect(user1).pricePerToken()).to.equal(ethers.utils.parseEther("0.45"));
-        expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(1);
-        expect(await contract.connect(user1).serviceFee()).to.equal(ethers.utils.parseEther("0.05"));
-        expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(0);
-        const oldBalance = await provider.getBalance(user1.address);
-        const oldContractBalance = await provider.getBalance(contract.address);
-        const exactValue = ethers.utils.parseEther(`1.4`);
-        const sendingValue = ethers.utils.parseEther(`1.567`);
-        const call = contract.connect(user1).reserveTokens(3, { value: sendingValue });
-        const tx = await call;
-        const receipt = await tx.wait();
-        expect(receipt.logs.length).to.equal(9);
-        await expect(call).to.emit(contract, "Deposited")
-            .withArgs(user1.address, ethers.utils.parseEther('1.35'), ethers.utils.parseEther('0.05'), exactValue);
-        await expect(call).to.emit(contract, "Returned").withArgs(user1.address, user1.address, ethers.utils.parseEther('0.167'));
-        await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 1);
-        await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 1, 'ipfs://link-to-default-json-blob');
-        await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 2);
-        await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 2, 'ipfs://link-to-default-json-blob');
-        await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 3);
-        await expect(call).to.emit(contract, "TokenURIChanged").withArgs(user1.address, 3, 'ipfs://link-to-default-json-blob');
-        await expect(call).to.emit(contract, "TokensReserved").withArgs(user1.address, user1.address, 3);
-        expect(await contract.connect(user3).whitelistedNrOfTokens(user1.address)).to.equal(1);
-        expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(1);
-        expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(3);
-        const newBalance = await provider.getBalance(user1.address);
-        const newContractBalance = await provider.getBalance(contract.address);
-        const balanceDiff = oldBalance.sub(newBalance);
-        const contractBalanceDiff = newContractBalance.sub(oldContractBalance);
-        expect(balanceDiff.sub(exactValue).abs()).to.be.below(ethers.utils.parseEther('0.003')); // because of gas fees
-        expect(contractBalanceDiff).to.equal(exactValue);
-    });
 
     it('[reserveTokensForAccounts] must fail when called by a non-operator account', async () => {
         const call = contract.connect(user1).reserveTokensForAccounts([user5.address], [2]);
@@ -823,96 +863,150 @@ describe("arteQ ArtDrop", function() {
 
     [{ stage: LOCKED_STAGE,       stageName: 'locked'       },
      { stage: WHITELISTING_STAGE, stageName: 'whitelisting' },
-     { stage: MINTING_STAGE,      stageName: 'minting'      },
-     { stage: DISTRIBUTION_STAGE, stageName: 'distribution' }
     ].forEach((test) => {
         it(`[reserveTokensForAccounts] must fail when called in ${test.stageName} stage`, async () => {
             await makeOperator(user1);
             await goToStage(test.stage);
             const call = contract.connect(user1).reserveTokensForAccounts([user5.address], [2]);
-            await expect(call).to.be.revertedWith("arteQArtDrop: only callable in reservation stage");
+            await expect(call).to.be.revertedWith("arteQArtDrop: only callable in reservation and distribution stage");
         });
     });
 
-    it('[reserveTokensForAccounts] must fail when empty arrays are passed', async () => {
-        await makeOperator(user1);
-        await goToStage(RESERVATION_STAGE);
-        let call = contract.connect(user1).reserveTokensForAccounts([], []);
-        await expect(call).to.be.revertedWith("arteQArtDrop: zero length");
-        call = contract.connect(user1).reserveTokensForAccounts([user5.address], []);
-        await expect(call).to.be.revertedWith("arteQArtDrop: zero length");
-        call = contract.connect(user1).reserveTokensForAccounts([], [2]);
-        await expect(call).to.be.revertedWith("arteQArtDrop: zero length");
-    });
+    [{ stage: RESERVATION_STAGE,  stageName: 'reservation'  },
+     { stage: DISTRIBUTION_STAGE, stageName: 'distribution' }
+    ].forEach((test) => {
+      it(`[reserveTokensForAccounts] must fail when empty arrays are passed (${test.stageName} stage)`, async () => {
+          await makeOperator(user1);
+          await goToStage(test.stage);
+          let call = contract.connect(user1).reserveTokensForAccounts([], []);
+          await expect(call).to.be.revertedWith("arteQArtDrop: zero length");
+          call = contract.connect(user1).reserveTokensForAccounts([user5.address], []);
+          await expect(call).to.be.revertedWith("arteQArtDrop: zero length");
+          call = contract.connect(user1).reserveTokensForAccounts([], [2]);
+          await expect(call).to.be.revertedWith("arteQArtDrop: zero length");
+      });
 
-    it('[reserveTokensForAccounts] must fail when arrays having different lengths are passed', async () => {
-        await makeOperator(user1);
-        await goToStage(RESERVATION_STAGE);
-        const call = contract.connect(user1).reserveTokensForAccounts([user2.address, user3.address], [1, 3, 2]);
-        await expect(call).to.be.revertedWith("arteQArtDrop: different lengths");
-    });
+      it(`[reserveTokensForAccounts] must fail when arrays having different lengths are passed (${test.stageName} stage)`, async () => {
+          await makeOperator(user1);
+          await goToStage(test.stage);
+          const call = contract.connect(user1).reserveTokensForAccounts([user2.address, user3.address], [1, 3, 2]);
+          await expect(call).to.be.revertedWith("arteQArtDrop: different lengths");
+      });
 
-    it('[reserveTokensForAccounts] must fail when one of the accounts is zero address', async () => {
-        const operator = await whitelistAccountAndReturnOperator(user1, 4);
-        await goToStage(RESERVATION_STAGE);
-        expect(await contract.connect(operator).whitelistedNrOfTokens(user1.address)).to.equal(4);
-        const call = contract.connect(operator).reserveTokensForAccounts([user1.address, zeroAddress], [4, 3]);
-        await expect(call).to.be.revertedWith("arteQArtDrop: cannot be zero address");
-    });
+      it(`[reserveTokensForAccounts] must fail when one of the accounts is zero address (${test.stageName} stage)`, async () => {
+          const operator = await whitelistAccountAndReturnOperator(user1, 4);
+          await goToStage(test.stage);
+          expect(await contract.connect(operator).whitelistedNrOfTokens(user1.address)).to.equal(4);
+          const call = contract.connect(operator).reserveTokensForAccounts([user1.address, zeroAddress], [4, 3]);
+          await expect(call).to.be.revertedWith("arteQArtDrop: cannot be zero address");
+      });
 
-    it('[reserveTokensForAccounts] must fail when one of the accounts is not whitelisted', async () => {
-        const operator = await whitelistAccountAndReturnOperator(user1, 4);
-        await goToStage(RESERVATION_STAGE);
-        const call = contract.connect(operator).reserveTokensForAccounts([user1.address, user2.address], [4, 3]);
-        await expect(call).to.be.revertedWith("arteQArtDrop: not a whitelisted account");
-    });
+      it(`[reserveTokensForAccounts] must fail when one of the accounts is not whitelisted (${test.stageName} stage)`, async () => {
+          const operator = await whitelistAccountAndReturnOperator(user1, 4);
+          await goToStage(test.stage);
+          const call = contract.connect(operator).reserveTokensForAccounts([user1.address, user2.address], [4, 3]);
+          await expect(call).to.be.revertedWith("arteQArtDrop: not a whitelisted account");
+      });
 
-    it('[reserveTokensForAccounts] success scenario', async () => {
-        await whitelistAccountAndReturnOperator(user1, 4);
-        const operator = await whitelistAccountAndReturnOperator(user4, 2);
-        await goToStage(RESERVATION_STAGE);
+      it(`[reserveTokensForAccounts] success scenario (${test.stageName} stage)`, async () => {
+          await whitelistAccountAndReturnOperator(user1, 4);
+          const operator = await whitelistAccountAndReturnOperator(user4, 2);
+          await goToStage(test.stage);
 
-        expect(await contract.connect(operator).whitelistedNrOfTokens(user1.address)).to.equal(4);
-        expect(await contract.connect(operator).whitelistedNrOfTokens(user4.address)).to.equal(2);
-        expect(await contract.connect(user3).nrOfReservedTokens()).to.equal(0);
+          expect(await contract.connect(operator).whitelistedNrOfTokens(user1.address)).to.equal(4);
+          expect(await contract.connect(operator).whitelistedNrOfTokens(user4.address)).to.equal(2);
+          expect(await contract.connect(user3).nrOfReservedTokens()).to.equal(0);
 
-        const call = contract.connect(operator).reserveTokensForAccounts([user1.address, user4.address], [2, 2]);
-        const tx = await call;
-        const receipt = await tx.wait();
-        expect(receipt.logs.length).to.equal(10);
-        await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 1);
-        await expect(call).to.emit(contract, "TokenURIChanged").withArgs(operator.address, 1, 'ipfs://link-to-default-json-blob');
-        await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 2);
-        await expect(call).to.emit(contract, "TokenURIChanged").withArgs(operator.address, 2, 'ipfs://link-to-default-json-blob');
-        await expect(call).to.emit(contract, "TokensReserved").withArgs(operator.address, user1.address, 2);
-        await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user4.address, 3);
-        await expect(call).to.emit(contract, "TokenURIChanged").withArgs(operator.address, 3, 'ipfs://link-to-default-json-blob');
-        await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user4.address, 4);
-        await expect(call).to.emit(contract, "TokenURIChanged").withArgs(operator.address, 4, 'ipfs://link-to-default-json-blob');
-        await expect(call).to.emit(contract, "TokensReserved").withArgs(operator.address, user4.address, 2);
+          const call = contract.connect(operator).reserveTokensForAccounts([user1.address, user4.address], [2, 2]);
+          const tx = await call;
+          const receipt = await tx.wait();
+          expect(receipt.logs.length).to.equal(10);
+          await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 1);
+          await expect(call).to.emit(contract, "TokenURIChanged").withArgs(operator.address, 1, 'ipfs://link-to-default-json-blob');
+          await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 2);
+          await expect(call).to.emit(contract, "TokenURIChanged").withArgs(operator.address, 2, 'ipfs://link-to-default-json-blob');
+          await expect(call).to.emit(contract, "TokensReserved").withArgs(operator.address, user1.address, 2);
+          await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user4.address, 3);
+          await expect(call).to.emit(contract, "TokenURIChanged").withArgs(operator.address, 3, 'ipfs://link-to-default-json-blob');
+          await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user4.address, 4);
+          await expect(call).to.emit(contract, "TokenURIChanged").withArgs(operator.address, 4, 'ipfs://link-to-default-json-blob');
+          await expect(call).to.emit(contract, "TokensReserved").withArgs(operator.address, user4.address, 2);
 
-        expect(await contract.connect(operator).whitelistedNrOfTokens(user1.address)).to.equal(2);
-        expect(await contract.connect(operator).whitelistedNrOfTokens(user4.address)).to.equal(0);
-        expect(await contract.connect(user3).nrOfReservedTokens()).to.equal(4);
+          expect(await contract.connect(operator).whitelistedNrOfTokens(user1.address)).to.equal(2);
+          expect(await contract.connect(operator).whitelistedNrOfTokens(user4.address)).to.equal(0);
+          expect(await contract.connect(user3).nrOfReservedTokens()).to.equal(4);
 
-        {
-            const call = contract.connect(operator).reserveTokensForAccounts([user1.address], [3]);
-            await expect(call).to.be.revertedWith("arteQArtDrop: exceeding the reservation allowance");
-        }
-        {
-            expect(await contract.connect(operator).whitelistedNrOfTokens(user1.address)).to.equal(2);
-            const call = contract.connect(operator).reserveTokensForAccounts([user1.address], [2]);
-            const tx = await call;
-            const receipt = await tx.wait();
-            expect(receipt.logs.length).to.equal(5);
-            await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 5);
-            await expect(call).to.emit(contract, "TokenURIChanged").withArgs(operator.address, 5, 'ipfs://link-to-default-json-blob');
-            await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 6);
-            await expect(call).to.emit(contract, "TokenURIChanged").withArgs(operator.address, 6, 'ipfs://link-to-default-json-blob');
-            await expect(call).to.emit(contract, "TokensReserved").withArgs(operator.address, user1.address, 2);
-            expect(await contract.connect(operator).whitelistedNrOfTokens(user1.address)).to.equal(0);
-            expect(await contract.connect(user3).nrOfReservedTokens()).to.equal(6);
-        }
+          {
+              const call = contract.connect(operator).reserveTokensForAccounts([user1.address], [3]);
+              await expect(call).to.be.revertedWith("arteQArtDrop: exceeding the reservation allowance");
+          }
+          {
+              expect(await contract.connect(operator).whitelistedNrOfTokens(user1.address)).to.equal(2);
+              const call = contract.connect(operator).reserveTokensForAccounts([user1.address], [2]);
+              const tx = await call;
+              const receipt = await tx.wait();
+              expect(receipt.logs.length).to.equal(5);
+              await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 5);
+              await expect(call).to.emit(contract, "TokenURIChanged").withArgs(operator.address, 5, 'ipfs://link-to-default-json-blob');
+              await expect(call).to.emit(contract, "Transfer").withArgs(zeroAddress, user1.address, 6);
+              await expect(call).to.emit(contract, "TokenURIChanged").withArgs(operator.address, 6, 'ipfs://link-to-default-json-blob');
+              await expect(call).to.emit(contract, "TokensReserved").withArgs(operator.address, user1.address, 2);
+              expect(await contract.connect(operator).whitelistedNrOfTokens(user1.address)).to.equal(0);
+              expect(await contract.connect(user3).nrOfReservedTokens()).to.equal(6);
+          }
+      });
+
+      it.only(`[reserveTokensForAccounts] success scenario when whitelisting condition is lifted (${test.stageName} stage)`, async () => {
+          const provider = waffle.provider;
+
+          await makeOperator(user1);
+          const operator = user1;
+          await goToStage(test.stage);
+          // must fail as the user is not whitelisted
+          {
+              expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(0);
+              expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(0);
+              expect(await contract.connect(user1).canReserveWithoutBeingWhitelisted()).to.equal(false);
+              expect(await contract.connect(user3).whitelistedNrOfTokens(user2.address)).to.equal(0);
+              await expect(contract.connect(operator).reserveTokensForAccounts([user2.address], [3])).to.be.revertedWith("arteQArtDrop: not a whitelisted account");
+          }
+          // lifting the whitelisting condition
+          {
+              const taskId = await getApprovedTask();
+              const call = contract.connect(admin1).setCanReserveWithoutBeingWhitelisted(taskId, true);
+              const tx = await call;
+              const receipt = await tx.wait();
+              expect(receipt.logs.length).to.equal(2);
+              await expect(call).to.emit(adminContract, "TaskFinalized").withArgs(contract.address, admin1.address, taskId);
+              await expect(call).to.emit(contract, "CanReserveWithoutBeingWhitelistedChanged").withArgs(admin1.address, taskId, true);
+              expect(await contract.connect(user1).canReserveWithoutBeingWhitelisted()).to.equal(true);
+          }
+          // now it must succeed
+          {
+              expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(0);
+              expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(0);
+              expect(await contract.connect(user1).canReserveWithoutBeingWhitelisted()).to.equal(true);
+              expect(await contract.connect(user3).whitelistedNrOfTokens(user2.address)).to.equal(5);
+              await contract.connect(operator).reserveTokensForAccounts([user2.address], [3]);
+              expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(0);
+              expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(3);
+              expect(await contract.connect(user3).whitelistedNrOfTokens(user2.address)).to.equal(2);
+          }
+          // must fail when asking for another 3 drops
+          {
+              await expect(contract.connect(operator).reserveTokensForAccounts([user2.address], [3])).to.be.revertedWith("arteQArtDrop: exceeding the reservation allowance");
+          }
+          // now it must succeed
+          {
+              expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(0);
+              expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(3);
+              expect(await contract.connect(user3).whitelistedNrOfTokens(user2.address)).to.equal(2);
+              await contract.connect(operator).reserveTokensForAccounts([user2.address], [2]);
+              expect(await contract.connect(user3).nrOfWhitelistedAccounts()).to.equal(0);
+              expect(await contract.connect(user4).nrOfReservedTokens()).to.equal(5);
+              expect(await contract.connect(user3).whitelistedNrOfTokens(user2.address)).to.equal(5); // the wallet is allowed to buy again
+          }
+      });
     });
 
     it('[updateTokenURIs] must fail when called by a non-operator account', async () => {
@@ -922,7 +1016,6 @@ describe("arteQ ArtDrop", function() {
 
     [{ stage: LOCKED_STAGE,       stageName: 'locked'       },
      { stage: WHITELISTING_STAGE, stageName: 'whitelisting' },
-     { stage: MINTING_STAGE,      stageName: 'minting'      },
      { stage: RESERVATION_STAGE,  stageName: 'reservation'  }
     ].forEach((test) => {
         it(`[updateTokenURIs] must fail when called in ${test.stageName} stage`, async () => {
@@ -1035,7 +1128,6 @@ describe("arteQ ArtDrop", function() {
     [{ stage: LOCKED_STAGE       , stageName: 'locked'       },
      { stage: WHITELISTING_STAGE , stageName: 'whitelisting' },
      { stage: RESERVATION_STAGE  , stageName: 'reservation'  },
-     { stage: MINTING_STAGE      , stageName: 'minting'      },
      { stage: DISTRIBUTION_STAGE , stageName: 'distribution' },
     ].forEach((test) => {
         it(`[transferTo] success scenario in ${test.stageName} stage`, async () => {
