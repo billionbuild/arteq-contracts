@@ -20,16 +20,16 @@ pragma solidity 0.8.0;
 
 import "@openzeppelin/contracts/interfaces/IERC165.sol";
 import "@openzeppelin/contracts/interfaces/IERC2981.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "./ERC721URIStorage.sol";
+import "./ERC721.sol";
 import "./IarteQTaskFinalizer.sol";
-
-// TODO(kam): prevent transfer ether to contracts
 
 /// @author Kam Amini <kam@arteq.io> <kam@2b.team> <kam.cpp@gmail.com>
 ///
 /// @notice Use at your own risk
 contract arteQArtDrop is ERC721URIStorage, IERC2981 {
+
+    string private constant DEFAULT_TOKEN_URI = "DEFAULT_TOKEN_URI";
 
     uint256 public constant MAX_NR_TOKENS_PER_ACCOUNT = 5;
     uint256 public constant MAX_RESERVATIONS_COUNT = 10000;
@@ -41,6 +41,12 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
 
     // Counter for token IDs
     uint256 private _tokenIdCounter;
+
+    // Counter for pre-minted token IDs
+    uint256 private _preMintedTokenIdCounter;
+
+    // number of tokens owned by the contract
+    uint256 _contractBalance;
 
     address private _adminContract;
 
@@ -184,6 +190,8 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
         emit DefaultTokenURIChanged(msg.sender, 0, _defaultTokenURI);
 
         _tokenIdCounter = 1;
+        _preMintedTokenIdCounter = 1;
+        _contractBalance = 0;
 
         _whitelistedAccountsCounter = 0;
         _reservedTokensCounter = 0;
@@ -193,8 +201,9 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
         emit StageChanged(msg.sender, 0, 0, _stage);
 
         // Mint genesis token. Contract will be the eternal owner of the genesis token.
-        _mint(address(this), 0);
+        _mint(address(0), address(this), 0);
         _setTokenURI(0, initialGenesisTokenURI);
+        _contractBalance += 1;
         emit GenesisTokenURIChanged(msg.sender, 0, initialGenesisTokenURI);
 
         _royaltyWallet = address(this);
@@ -207,6 +216,47 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
         emit CanReserveWithoutBeingWhitelistedChanged(msg.sender, 0, _canReserveWithoutBeingWhitelisted);
     }
 
+    function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
+        if (_exists(tokenId)) {
+            string memory tokenURIValue = super.tokenURI(tokenId);
+            if (keccak256(bytes(tokenURIValue)) == keccak256(bytes(DEFAULT_TOKEN_URI))) {
+                return _defaultTokenURI;
+            }
+            return tokenURIValue;
+        }
+        if (tokenId >= 1 && tokenId < _preMintedTokenIdCounter) {
+            return _defaultTokenURI;
+        }
+        revert("arteQArtDrop: token id does not exist");
+    }
+
+    function ownerOf(uint256 tokenId) public view virtual override returns (address) {
+        if (_exists(tokenId)) {
+            return super.ownerOf(tokenId);
+        }
+        if (tokenId >= 1 && tokenId < _preMintedTokenIdCounter) {
+            return address(this);
+        }
+        revert("arteQArtDrop: token is does not exist");
+    }
+
+    function balanceOf(address owner) public view virtual override returns (uint256) {
+        if (owner == address(this)) {
+            return _contractBalance;
+        }
+        return super.balanceOf(owner);
+    }
+
+    function preMint(uint256 nr) external
+      onlyOperator {
+        for (uint256 i = 0; i < nr; i++) {
+            require(_preMintedTokenIdCounter <= MAX_RESERVATIONS_COUNT, "arteQArtDrop: cannot pre-mint more");
+            emit Transfer(address(0), address(this), _preMintedTokenIdCounter);
+            _preMintedTokenIdCounter += 1;
+        }
+        _contractBalance += nr;
+    }
+
     function pricePerToken() external view returns (uint256) {
         return _pricePerToken;
     }
@@ -217,6 +267,10 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
 
     function defaultTokenURI() external view returns (string memory) {
         return _defaultTokenURI;
+    }
+
+    function nrPreMintedTokens() external view returns (uint256) {
+        return _preMintedTokenIdCounter - 1;
     }
 
     function stage() external view returns (int256) {
@@ -498,14 +552,19 @@ contract arteQArtDrop is ERC721URIStorage, IERC2981 {
     function _reserveTokens(address target, uint256 nrOfTokensToReserve) internal {
         for (uint256 i = 1; i <= nrOfTokensToReserve; i++) {
             uint256 newTokenId = _tokenIdCounter;
-            _mint(target, newTokenId);
-            _setTokenURI(newTokenId, _defaultTokenURI);
-            emit TokenURIChanged(msg.sender, newTokenId, _defaultTokenURI);
+            _mint(address(this), target, newTokenId);
+            _setTokenURI(newTokenId, DEFAULT_TOKEN_URI);
             _tokenIdCounter += 1;
-            _reservedTokensCounter += 1;
             require(_reservedTokensCounter <= MAX_RESERVATIONS_COUNT,
                     "arteQArtDrop: exceeding max number of reservations");
+            _reservedTokensCounter += 1;
         }
+        if ((_contractBalance - 1) > nrOfTokensToReserve) {
+            _contractBalance -= nrOfTokensToReserve;
+        } else {
+            _contractBalance = 1; // eventually, the contract must only own the genesis token
+        }
+        require(_contractBalance >= 1, "arteQArtDrop: contract balance went below 1");
         _whitelistedAccounts[target] -= nrOfTokensToReserve;
         require(_whitelistedAccounts[target] >= 0, "arteQArtDrop: should not happen");
         emit TokensReserved(msg.sender, target, nrOfTokensToReserve);
